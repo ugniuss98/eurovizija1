@@ -183,12 +183,15 @@ export async function saveInvoice(invoice: Invoice): Promise<void> {
   const { error } = await supabase
     .from('invoices')
     .upsert({ ...payload, created_at: invoice.createdAt });
-  if (error) throw error;
+  if (error) {
+    console.error('Invoice upsert error:', JSON.stringify(error));
+    throw new Error(error.message);
+  }
 
-  // Upsert items
+  // Replace items
   await supabase.from('invoice_items').delete().eq('invoice_id', invoice.id);
   if (invoice.items.length > 0) {
-    await supabase.from('invoice_items').insert(
+    const { error: itemsError } = await supabase.from('invoice_items').insert(
       invoice.items.map((item, idx) => ({
         id: item.id,
         invoice_id: invoice.id,
@@ -202,6 +205,10 @@ export async function saveInvoice(invoice: Invoice): Promise<void> {
         sort_order: idx,
       }))
     );
+    if (itemsError) {
+      console.error('Invoice items insert error:', JSON.stringify(itemsError));
+      throw new Error(itemsError.message);
+    }
   }
 }
 
