@@ -4,38 +4,39 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
-import { getInvoices, saveInvoice, deleteInvoice } from '@/lib/storage';
+import { getInvoice, saveInvoice, deleteInvoice } from '@/lib/storage';
 import { Invoice } from '@/lib/types';
 import { formatCurrency, getInvoiceStatusLabel, getInvoiceTypeLabel } from '@/lib/utils';
-import { Edit, Trash2, CheckCircle2, ArrowLeft, Printer } from 'lucide-react';
+import { Edit, Trash2, CheckCircle2, ArrowLeft, Printer, Loader2 } from 'lucide-react';
 
 export default function InvoiceViewPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [invoice, setInvoice] = useState<Invoice | null | undefined>(undefined);
 
   useEffect(() => {
-    const inv = getInvoices().find(i => i.id === id);
-    setInvoice(inv ?? null);
+    getInvoice(id).then(setInvoice);
   }, [id]);
 
-  if (!invoice) return (
+  if (invoice === undefined) return (
     <AppShell>
-      <div className="py-20 text-center text-gray-400">Sąskaita nerasta</div>
+      <div className="py-20 text-center"><Loader2 size={28} className="text-blue-400 animate-spin mx-auto" /></div>
     </AppShell>
   );
+  if (!invoice) return (
+    <AppShell><div className="py-20 text-center text-gray-400">Sąskaita nerasta</div></AppShell>
+  );
 
-  const handleMarkPaid = () => {
+  const handleMarkPaid = async () => {
     const updated = { ...invoice, status: 'paid' as const, updatedAt: new Date().toISOString() };
-    saveInvoice(updated);
+    await saveInvoice(updated);
     setInvoice(updated);
   };
 
-  const handleDelete = () => {
-    if (confirm('Ar tikrai norite ištrinti šią sąskaitą?')) {
-      deleteInvoice(invoice.id);
-      router.push('/invoices');
-    }
+  const handleDelete = async () => {
+    if (!confirm('Ar tikrai norite ištrinti šią sąskaitą?')) return;
+    await deleteInvoice(invoice.id);
+    router.push('/invoices');
   };
 
   return (
@@ -43,9 +44,7 @@ export default function InvoiceViewPage() {
       <div className="max-w-4xl mx-auto">
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
-            <Link href="/invoices" className="text-gray-400 hover:text-gray-600">
-              <ArrowLeft size={20} />
-            </Link>
+            <Link href="/invoices" className="text-gray-400 hover:text-gray-600"><ArrowLeft size={20} /></Link>
             <h1 className="font-semibold text-gray-900">
               {getInvoiceTypeLabel(invoice.type)} {invoice.series} {invoice.number}
             </h1>
@@ -94,19 +93,19 @@ export default function InvoiceViewPage() {
 
           <div className="grid grid-cols-2 gap-8 mb-8">
             <div>
-              <h3 className="font-semibold mb-2 text-gray-900">Pardavėjas</h3>
+              <h3 className="font-semibold mb-2">Pardavėjas</h3>
               <p className="font-medium">{invoice.seller.name}</p>
               <p className="text-sm text-gray-500 mt-1">{invoice.seller.address}</p>
               <p className="text-sm text-gray-500">Įm. k.: {invoice.seller.companyCode}</p>
               {invoice.seller.vatCode && <p className="text-sm text-gray-500">PVM: {invoice.seller.vatCode}</p>}
               {invoice.seller.phone && <p className="text-sm text-gray-500">{invoice.seller.phone}</p>}
               {invoice.seller.email && <p className="text-sm text-gray-500">{invoice.seller.email}</p>}
-              {invoice.seller.bankAccounts.filter(b => b.enabled).map(b => (
-                <p key={b.id} className="text-sm text-gray-500 mt-1">{b.bankName}: {b.iban}</p>
+              {invoice.seller.bankAccounts?.filter((b: {enabled: boolean}) => b.enabled).map((b: {id: string; bankName: string; iban: string}) => (
+                <p key={b.id} className="text-sm text-gray-500 mt-1">{b.bankName}: <span className="font-mono text-xs">{b.iban}</span></p>
               ))}
             </div>
             <div>
-              <h3 className="font-semibold mb-2 text-gray-900">Pirkėjas</h3>
+              <h3 className="font-semibold mb-2">Pirkėjas</h3>
               <p className="font-medium">{invoice.buyer?.name || '—'}</p>
               {invoice.buyer?.address && <p className="text-sm text-gray-500 mt-1">{invoice.buyer.address}</p>}
               {invoice.buyer?.companyCode && <p className="text-sm text-gray-500">Įm. k.: {invoice.buyer.companyCode}</p>}
@@ -114,7 +113,6 @@ export default function InvoiceViewPage() {
             </div>
           </div>
 
-          {/* Items table */}
           <table className="w-full text-sm mb-6">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
@@ -145,7 +143,6 @@ export default function InvoiceViewPage() {
             </tbody>
           </table>
 
-          {/* Total */}
           <div className="flex justify-end">
             <div className="w-64">
               {invoice.vatEnabled && (

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ChevronDown, Lock, X, Eye, EyeOff, Plus, Trash2,
-  Minus, Edit2, CheckCircle2
+  Minus, Edit2, CheckCircle2, Loader2
 } from 'lucide-react';
 import { Invoice, InvoiceItem, Settings, Client, BankAccount } from '@/lib/types';
 import {
@@ -28,7 +28,6 @@ function newItem(): InvoiceItem {
 export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props) {
   const router = useRouter();
   const [settings, setSettings] = useState<Settings | null>(null);
-
   const [type, setType] = useState<Invoice['type']>(initial?.type ?? defaultType);
   const [showTypeMenu, setShowTypeMenu] = useState(false);
   const [series, setSeries] = useState(initial?.series ?? 'BA');
@@ -53,15 +52,16 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
 
   useEffect(() => {
-    const s = getSettings();
-    setSettings(s);
-    setIssuedBy(initial?.issuedBy ?? s.issuedBy);
-    setBankAccounts(s.company.bankAccounts);
-    if (!initial) {
-      setSeries(s.defaultSeries);
-      setNumber(getNextNumber(s.defaultSeries));
-      setDueDate(addDays(today(), s.defaultPaymentDays));
-    }
+    getSettings().then(s => {
+      setSettings(s);
+      setIssuedBy(initial?.issuedBy ?? s.issuedBy);
+      setBankAccounts(s.company.bankAccounts);
+      if (!initial) {
+        setSeries(s.defaultSeries);
+        setDueDate(addDays(today(), s.defaultPaymentDays));
+        getNextNumber(s.defaultSeries).then(setNumber);
+      }
+    });
   }, [initial]);
 
   const updateItem = (id: string, field: keyof InvoiceItem, val: string | number) => {
@@ -86,46 +86,55 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
     return `${euros} EUR ${cents.toString().padStart(2, '0')} ct`;
   }
 
-  const handleSave = (status: Invoice['status'] = 'unpaid') => {
+  const handleSave = async (status: Invoice['status'] = 'unpaid') => {
     if (!settings) return;
     setSaving(true);
-    const invoice: Invoice = {
-      id: initial?.id ?? generateId(),
-      type,
-      series,
-      number,
-      date,
-      dueDate,
-      status: paidEnabled ? 'paid' : status,
-      seller: settings.company,
-      buyer: buyer ?? { id: '', name: '', companyCode: '' },
-      items,
-      totalDiscount,
-      totalDiscountEnabled,
-      subtotal,
-      vatRate,
-      vatEnabled,
-      total: grandTotal,
-      currency: settings.currency,
-      notes: notesEnabled ? notes : undefined,
-      comment: commentEnabled ? comment : undefined,
-      issuedBy,
-      acceptedBy,
-      createdAt: initial?.createdAt ?? new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    saveInvoice(invoice);
-    setSaving(false);
-    router.push('/invoices');
+    try {
+      const invoice: Invoice = {
+        id: initial?.id ?? generateId(),
+        type,
+        series,
+        number,
+        date,
+        dueDate,
+        status: paidEnabled ? 'paid' : status,
+        seller: settings.company,
+        buyer: buyer ?? { id: '', name: '', companyCode: '' },
+        items,
+        totalDiscount,
+        totalDiscountEnabled,
+        subtotal,
+        vatRate,
+        vatEnabled,
+        total: grandTotal,
+        currency: settings.currency,
+        notes: notesEnabled ? notes : undefined,
+        comment: commentEnabled ? comment : undefined,
+        issuedBy,
+        acceptedBy,
+        createdAt: initial?.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await saveInvoice(invoice);
+      router.push('/invoices');
+    } catch (e) {
+      console.error(e);
+      alert('Klaida išsaugant sąskaitą. Bandykite dar kartą.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  if (!settings) return <div className="p-8 text-center text-gray-400">Kraunama...</div>;
+  if (!settings) return (
+    <div className="flex items-center justify-center py-20">
+      <Loader2 size={28} className="text-blue-400 animate-spin" />
+    </div>
+  );
 
   const seller = settings.company;
 
   return (
     <div className="max-w-4xl mx-auto">
-      {/* Top project bar */}
       <div className="flex items-center justify-end mb-2 gap-4 text-sm text-gray-500">
         <span>Projektas</span>
         <button className="text-blue-600 hover:underline font-medium flex items-center gap-1">
@@ -134,13 +143,11 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-        {/* Title row */}
+        {/* Title */}
         <div className="flex items-center justify-center mb-6">
           <div className="relative">
-            <button
-              onClick={() => setShowTypeMenu(v => !v)}
-              className="flex items-center gap-2 text-2xl font-bold text-gray-900 hover:text-blue-600 transition-colors"
-            >
+            <button onClick={() => setShowTypeMenu(v => !v)}
+              className="flex items-center gap-2 text-2xl font-bold text-gray-900 hover:text-blue-600 transition-colors">
               {getInvoiceTypeLabel(type).toUpperCase()}
               <ChevronDown size={20} />
             </button>
@@ -157,29 +164,23 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
           </div>
         </div>
 
-        {/* Series / Number / Date */}
+        {/* Series / Number / Dates */}
         <div className="grid grid-cols-2 gap-y-4 gap-x-6 max-w-sm mx-auto mb-8">
           <label className="text-sm text-gray-500 text-right self-center">Serija</label>
           <div className="flex items-center gap-2">
             <div className="relative">
-              <select
-                value={series}
-                onChange={e => { setSeries(e.target.value); if (!initial) setNumber(getNextNumber(e.target.value)); }}
-                className="pl-3 pr-7 py-1.5 text-sm border border-gray-200 rounded-lg appearance-none focus:border-blue-400"
-              >
+              <select value={series}
+                onChange={e => { setSeries(e.target.value); if (!initial) getNextNumber(e.target.value).then(setNumber); }}
+                className="pl-3 pr-7 py-1.5 text-sm border border-gray-200 rounded-lg appearance-none focus:border-blue-400 outline-none">
                 {['BA', 'INV', 'SF', 'PVM'].map(s => <option key={s}>{s}</option>)}
               </select>
               <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
             </div>
-            <input
-              type="number"
-              value={number}
+            <input type="number" value={number}
               onChange={e => !locked && setNumber(Number(e.target.value))}
               readOnly={locked}
-              className={`w-16 text-center py-1.5 text-sm border rounded-lg ${locked ? 'bg-gray-50 text-gray-500 border-gray-200' : 'border-blue-400 focus:ring-1 focus:ring-blue-100'}`}
-            />
-            <button onClick={() => setLocked(v => !v)} title={locked ? 'Atrakinti' : 'Užrakinti'}
-              className="text-gray-400 hover:text-gray-600">
+              className={`w-16 text-center py-1.5 text-sm border rounded-lg outline-none ${locked ? 'bg-gray-50 text-gray-500 border-gray-200' : 'border-blue-400'}`} />
+            <button onClick={() => setLocked(v => !v)}>
               <Lock size={16} className={locked ? 'text-gray-400' : 'text-blue-500'} />
             </button>
             <span className="text-sm font-medium text-gray-700 bg-gray-100 px-2 py-1 rounded">
@@ -190,14 +191,14 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
           <label className="text-sm text-gray-500 text-right self-center">Sąskaitos data</label>
           <div className="flex items-center gap-1">
             <input type="date" value={date} onChange={e => setDate(e.target.value)}
-              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:border-blue-400" />
+              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:border-blue-400 outline-none" />
             <button onClick={() => setDate('')} className="text-gray-300 hover:text-gray-500"><X size={14} /></button>
           </div>
 
           <label className="text-sm text-gray-500 text-right self-center">Apmokėti iki</label>
           <div className="flex items-center gap-1">
             <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
-              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:border-blue-400" />
+              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:border-blue-400 outline-none" />
             <button onClick={() => setDueDate('')} className="text-gray-300 hover:text-gray-500"><X size={14} /></button>
             <Eye size={14} className="text-gray-300" />
           </div>
@@ -205,7 +206,6 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
 
         {/* Seller / Buyer */}
         <div className="grid grid-cols-2 gap-8 mb-8">
-          {/* Seller */}
           <div>
             <h3 className="font-semibold text-gray-900 mb-3">Pardavėjas</h3>
             <p className="font-medium text-gray-900 mb-3">{seller.name}</p>
@@ -216,30 +216,25 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
               {seller.phone && <SellerRow label="Telefonas" value={seller.phone} />}
               {seller.email && <SellerRow label="El. paštas" value={seller.email} />}
             </div>
-
-            {/* Bank accounts */}
             <div className="mt-4 border border-gray-200 rounded-xl p-3 space-y-2">
               {bankAccounts.map(acc => (
                 <div key={acc.id} className="flex items-center justify-between gap-2">
                   <span className="text-sm text-gray-600 font-medium">{acc.bankName}</span>
-                  <span className="text-sm text-gray-500 font-mono text-xs">{acc.iban}</span>
-                  <Toggle checked={acc.enabled} onChange={v => setBankAccounts(prev =>
-                    prev.map(a => a.id === acc.id ? { ...a, enabled: v } : a)
-                  )} />
+                  <span className="text-xs font-mono text-gray-500">{acc.iban}</span>
+                  <Toggle checked={acc.enabled} onChange={v =>
+                    setBankAccounts(prev => prev.map(a => a.id === acc.id ? { ...a, enabled: v } : a))} />
                 </div>
               ))}
               <button className="flex items-center gap-1.5 text-blue-600 text-sm hover:text-blue-700 mt-1">
                 <Plus size={14} /> Pridėti naują banko sąskaitą
               </button>
             </div>
-
             <div className="mt-3 flex items-center gap-2 text-sm text-gray-500">
               <Toggle checked={false} onChange={() => {}} />
               <span>Atnaujinti veiklos informaciją nustatymuose</span>
             </div>
           </div>
 
-          {/* Buyer */}
           <div>
             <h3 className="font-semibold text-gray-900 mb-3">Pirkėjas</h3>
             <CompanySearch value={buyer} onChange={setBuyer} />
@@ -262,17 +257,17 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
         {/* Items */}
         <div className="mb-6">
           <h3 className="font-semibold text-gray-900 mb-3">Prekė/paslauga</h3>
-          <div className="w-full overflow-x-auto">
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-2 py-2.5 text-left font-medium text-gray-500 text-xs w-6">#</th>
-                  <th className="px-2 py-2.5 text-left font-medium text-gray-500 text-xs">Pavadinimas</th>
-                  <th className="px-2 py-2.5 text-left font-medium text-gray-500 text-xs w-24">Matas</th>
-                  <th className="px-2 py-2.5 text-left font-medium text-gray-500 text-xs w-28">Kiekis</th>
-                  <th className="px-2 py-2.5 text-left font-medium text-gray-500 text-xs w-28">Kaina</th>
-                  <th className="px-2 py-2.5 text-left font-medium text-gray-500 text-xs w-24">Nuolaida (%)</th>
-                  <th className="px-2 py-2.5 text-left font-medium text-gray-500 text-xs w-28">Iš viso</th>
+                  <th className="px-2 py-2.5 text-left text-xs font-medium text-gray-500 w-6">#</th>
+                  <th className="px-2 py-2.5 text-left text-xs font-medium text-gray-500">Pavadinimas</th>
+                  <th className="px-2 py-2.5 text-left text-xs font-medium text-gray-500 w-24">Matas</th>
+                  <th className="px-2 py-2.5 text-left text-xs font-medium text-gray-500 w-28">Kiekis</th>
+                  <th className="px-2 py-2.5 text-left text-xs font-medium text-gray-500 w-28">Kaina</th>
+                  <th className="px-2 py-2.5 text-left text-xs font-medium text-gray-500 w-24">Nuolaida (%)</th>
+                  <th className="px-2 py-2.5 text-left text-xs font-medium text-gray-500 w-28">Iš viso</th>
                   <th className="w-8" />
                 </tr>
               </thead>
@@ -281,26 +276,20 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
                   <tr key={item.id} className="border-b border-gray-100">
                     <td className="px-2 py-2 text-gray-400 text-xs">{idx + 1}</td>
                     <td className="px-2 py-1">
-                      <input
-                        value={item.name}
+                      <input value={item.name}
                         onChange={e => updateItem(item.id, 'name', e.target.value)}
                         placeholder="Pavadinimas"
-                        className="w-full px-2 py-1.5 border border-transparent hover:border-gray-200 focus:border-blue-400 rounded text-sm focus:bg-white"
-                      />
-                      <input
-                        value={item.description}
+                        className="w-full px-2 py-1.5 border border-transparent hover:border-gray-200 focus:border-blue-400 rounded text-sm focus:bg-white outline-none" />
+                      <input value={item.description}
                         onChange={e => updateItem(item.id, 'description', e.target.value)}
                         placeholder="Įveskite aprašymą čia"
-                        className="w-full px-2 py-1 text-xs text-gray-400 border border-transparent hover:border-gray-200 focus:border-blue-400 rounded focus:bg-white"
-                      />
+                        className="w-full px-2 py-1 text-xs text-gray-400 border border-transparent hover:border-gray-200 focus:border-blue-400 rounded focus:bg-white outline-none" />
                     </td>
                     <td className="px-2 py-1">
                       <div className="relative">
-                        <select
-                          value={item.unit}
+                        <select value={item.unit}
                           onChange={e => updateItem(item.id, 'unit', e.target.value)}
-                          className="w-full pl-2 pr-6 py-1.5 border border-gray-200 rounded text-sm appearance-none focus:border-blue-400"
-                        >
+                          className="w-full pl-2 pr-6 py-1.5 border border-gray-200 rounded text-sm appearance-none focus:border-blue-400 outline-none">
                           {UNITS.map(u => <option key={u}>{u}</option>)}
                         </select>
                         <ChevronDown size={11} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -312,12 +301,9 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
                           className="px-2 py-1.5 text-gray-400 hover:bg-gray-100">
                           <Minus size={12} />
                         </button>
-                        <input
-                          type="number"
-                          value={item.quantity}
+                        <input type="number" value={item.quantity}
                           onChange={e => updateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                          className="w-12 text-center text-sm py-1.5 focus:outline-none"
-                        />
+                          className="w-12 text-center text-sm py-1.5 outline-none" />
                         <button onClick={() => updateItem(item.id, 'quantity', item.quantity + 1)}
                           className="px-2 py-1.5 text-gray-400 hover:bg-gray-100">
                           <Plus size={12} />
@@ -325,21 +311,15 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
                       </div>
                     </td>
                     <td className="px-2 py-1">
-                      <input
-                        type="number"
-                        value={item.price}
+                      <input type="number" value={item.price}
                         onChange={e => updateItem(item.id, 'price', parseFloat(e.target.value) || 0)}
-                        className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:border-blue-400 text-right"
-                      />
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:border-blue-400 text-right outline-none" />
                     </td>
                     <td className="px-2 py-1">
-                      <input
-                        type="number"
-                        value={item.discount}
+                      <input type="number" value={item.discount}
                         onChange={e => updateItem(item.id, 'discount', parseFloat(e.target.value) || 0)}
-                        className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:border-blue-400 text-right"
-                        min={0} max={100}
-                      />
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:border-blue-400 text-right outline-none"
+                        min={0} max={100} />
                     </td>
                     <td className="px-2 py-1 text-right font-medium text-gray-700">
                       {calcItemTotal(item).toFixed(2)}
@@ -357,7 +337,6 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
               </tbody>
             </table>
           </div>
-
           <button onClick={addItem}
             className="mt-3 flex items-center gap-1.5 text-blue-600 text-sm hover:text-blue-700 font-medium">
             <Plus size={15} /> Pridėti prekę/paslaugą
@@ -373,8 +352,10 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
                 <span className="text-gray-600">Nuolaida visai sąskaitai</span>
               </div>
               {totalDiscountEnabled && (
-                <input type="number" value={totalDiscount} onChange={e => setTotalDiscount(parseFloat(e.target.value) || 0)}
-                  className="w-16 text-right border border-gray-200 rounded px-2 py-1 text-sm" min={0} max={100} />
+                <input type="number" value={totalDiscount}
+                  onChange={e => setTotalDiscount(parseFloat(e.target.value) || 0)}
+                  className="w-16 text-right border border-gray-200 rounded px-2 py-1 text-sm outline-none"
+                  min={0} max={100} />
               )}
             </div>
 
@@ -385,14 +366,15 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
               </div>
               {vatEnabled && (
                 <div className="flex items-center gap-1">
-                  <input type="number" value={vatRate} onChange={e => setVatRate(parseFloat(e.target.value) || 0)}
-                    className="w-14 text-right border border-gray-200 rounded px-2 py-1 text-sm" />
+                  <input type="number" value={vatRate}
+                    onChange={e => setVatRate(parseFloat(e.target.value) || 0)}
+                    className="w-14 text-right border border-gray-200 rounded px-2 py-1 text-sm outline-none" />
                   <span className="text-gray-500 text-xs">%</span>
                 </div>
               )}
             </div>
 
-            <div className="flex items-center justify-between text-sm pt-1">
+            <div className="flex items-center justify-between text-sm">
               <div className="flex items-center gap-2">
                 <Toggle checked={false} onChange={() => {}} />
                 <span className="text-gray-600">Papildoma valiuta</span>
@@ -432,7 +414,6 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
           </div>
         </div>
 
-        {/* In words */}
         <div className="mb-6 text-sm text-gray-500">
           <span className="font-medium text-gray-700">Viso žodžiais: </span>
           {numberToWords(grandTotal)}
@@ -446,15 +427,14 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">Sąskaitą išrašė</label>
                 <input value={issuedBy} onChange={e => setIssuedBy(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-400" />
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-400 outline-none" />
               </div>
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">Sąskaitą priėmė</label>
                 <input value={acceptedBy} onChange={e => setAcceptedBy(e.target.value)}
                   placeholder="Neprivaloma"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-400" />
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-400 outline-none" />
               </div>
-
               <div className="flex items-center gap-2 mt-2">
                 <Toggle checked={notesEnabled} onChange={setNotesEnabled} />
                 <span className="text-sm text-gray-600">Pridėti pastabą</span>
@@ -464,9 +444,8 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
                 <textarea value={notes} onChange={e => setNotes(e.target.value)}
                   placeholder="Pastaba (matoma sąskaitoje)"
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-400 resize-none" />
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-400 resize-none outline-none" />
               )}
-
               <div className="flex items-center gap-2">
                 <Toggle checked={commentEnabled} onChange={setCommentEnabled} />
                 <span className="text-sm text-gray-600">Pridėti komentarą</span>
@@ -476,7 +455,7 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
                 <textarea value={comment} onChange={e => setComment(e.target.value)}
                   placeholder="Komentaras (nematomas sąskaitoje)"
                   rows={2}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-400 resize-none" />
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-400 resize-none outline-none" />
               )}
             </div>
           </div>
@@ -501,25 +480,20 @@ export default function InvoiceForm({ initial, defaultType = 'invoice' }: Props)
           </div>
         </div>
 
-        {/* Action buttons */}
+        {/* Actions */}
         <div className="flex items-center justify-between pt-4 border-t border-gray-100">
           <button onClick={() => router.push('/invoices')}
             className="px-5 py-2.5 text-sm text-gray-600 hover:text-gray-800 border border-gray-200 rounded-xl hover:bg-gray-50">
             Atšaukti
           </button>
           <div className="flex gap-2">
-            <button
-              onClick={() => handleSave('draft')}
-              disabled={saving}
-              className="px-5 py-2.5 text-sm border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-600"
-            >
+            <button onClick={() => handleSave('draft')} disabled={saving}
+              className="px-5 py-2.5 text-sm border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-600 disabled:opacity-50">
               Išsaugoti juodraštį
             </button>
-            <button
-              onClick={() => handleSave('unpaid')}
-              disabled={saving}
-              className="px-6 py-2.5 text-sm bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium"
-            >
+            <button onClick={() => handleSave('unpaid')} disabled={saving}
+              className="px-6 py-2.5 text-sm bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium disabled:opacity-50 flex items-center gap-2">
+              {saving && <Loader2 size={14} className="animate-spin" />}
               {saving ? 'Saugoma...' : 'Išrašyti sąskaitą'}
             </button>
           </div>
@@ -544,16 +518,9 @@ function SellerRow({ label, value }: { label: string; value?: string }) {
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-        checked ? 'bg-blue-500' : 'bg-gray-200'
-      }`}
-    >
-      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-        checked ? 'translate-x-4.5' : 'translate-x-0.5'
-      }`} />
+    <button type="button" onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${checked ? 'bg-blue-500' : 'bg-gray-200'}`}>
+      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
     </button>
   );
 }

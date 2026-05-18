@@ -6,16 +6,15 @@ import StatisticsChart from '@/components/StatisticsChart';
 import { getInvoices } from '@/lib/storage';
 import { Invoice } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
-import { ChevronLeft, ChevronRight, ChevronDown, ArrowUpRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, ArrowUpRight, Loader2 } from 'lucide-react';
 
 export default function StatisticsPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
   const [year, setYear] = useState(new Date().getFullYear());
-  const [interval, setInterval] = useState('Metai');
-  const [series, setSeries] = useState('Visi');
 
   useEffect(() => {
-    setInvoices(getInvoices());
+    getInvoices().then(data => { setInvoices(data); setLoading(false); });
   }, []);
 
   const yearInvoices = useMemo(() =>
@@ -41,12 +40,10 @@ export default function StatisticsPage() {
   return (
     <AppShell>
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h1 className="text-sm font-medium text-gray-500">Metų statistika</h1>
         </div>
 
-        {/* Year nav */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100">
           <div className="flex items-center gap-3">
             <button onClick={() => setYear(y => y - 1)}
@@ -63,33 +60,36 @@ export default function StatisticsPage() {
             <div className="flex items-center gap-1.5 text-sm text-gray-600">
               <span>Intervalas</span>
               <button className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg text-sm hover:bg-gray-50">
-                {interval} <ChevronDown size={13} />
+                Metai <ChevronDown size={13} />
               </button>
             </div>
             <div className="flex items-center gap-1.5 text-sm text-gray-600">
               <span>Serija</span>
               <button className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg text-sm hover:bg-gray-50">
-                {series} <ChevronDown size={13} />
+                Visi <ChevronDown size={13} />
               </button>
             </div>
           </div>
         </div>
 
-        {/* KPI row */}
         <div className="grid grid-cols-5 divide-x divide-gray-100 border-b border-gray-100">
           <KpiCell label="Išrašytos sąskaitos" value={formatCurrency(totalIssued)} hasDropdown hasArrow />
-          <KpiCell label="Gauti mokėjimai" value={formatCurrency(totalReceived)} iconColor="text-green-500" />
-          <KpiCell label="Neapmokėtos sąskaitos" value={formatCurrency(totalUnpaid)} hasDropdown hasArrow iconColor="text-orange-500" />
-          <KpiCell label="Sąnaudos" value={formatCurrency(0)} hasDropdown iconColor="text-yellow-500" />
-          <KpiCell label="Grynasis pelnas" value={formatCurrency(totalIssued)} iconColor="text-purple-500" />
+          <KpiCell label="Gauti mokėjimai" value={formatCurrency(totalReceived)} />
+          <KpiCell label="Neapmokėtos sąskaitos" value={formatCurrency(totalUnpaid)} hasDropdown hasArrow />
+          <KpiCell label="Sąnaudos" value={formatCurrency(0)} hasDropdown />
+          <KpiCell label="Grynasis pelnas" value={formatCurrency(totalIssued)} />
         </div>
 
-        {/* Chart */}
         <div className="px-6 py-6">
-          <StatisticsChart data={monthData} year={year} />
+          {loading ? (
+            <div className="h-80 flex items-center justify-center">
+              <Loader2 size={28} className="text-blue-400 animate-spin" />
+            </div>
+          ) : (
+            <StatisticsChart data={monthData} year={year} />
+          )}
         </div>
 
-        {/* Legend */}
         <div className="flex items-center gap-2 px-6 pb-4 text-xs text-gray-500">
           <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />
           <span>Ką reiškia šie duomenys?</span>
@@ -99,8 +99,8 @@ export default function StatisticsPage() {
   );
 }
 
-function KpiCell({ label, value, hasDropdown, hasArrow, iconColor }: {
-  label: string; value: string; hasDropdown?: boolean; hasArrow?: boolean; iconColor?: string;
+function KpiCell({ label, value, hasDropdown, hasArrow }: {
+  label: string; value: string; hasDropdown?: boolean; hasArrow?: boolean;
 }) {
   return (
     <div className="px-6 py-4">
@@ -109,9 +109,7 @@ function KpiCell({ label, value, hasDropdown, hasArrow, iconColor }: {
         {hasDropdown && <ChevronDown size={13} className="text-gray-400" />}
         {hasArrow && <ArrowUpRight size={13} className="text-gray-400" />}
       </div>
-      <div className={`text-xl font-bold ${iconColor ? '' : 'text-gray-900'}`} style={{ color: iconColor ? undefined : '#111' }}>
-        {value}
-      </div>
+      <div className="text-xl font-bold text-gray-900">{value}</div>
     </div>
   );
 }

@@ -6,45 +6,33 @@ import AppShell from '@/components/AppShell';
 import { getInvoices } from '@/lib/storage';
 import { Invoice } from '@/lib/types';
 import { formatCurrency, getInvoiceStatusLabel } from '@/lib/utils';
-import { FileText, TrendingUp, Clock, ArrowUpRight } from 'lucide-react';
+import { FileText, TrendingUp, Clock, ArrowUpRight, Plus, Loader2 } from 'lucide-react';
 
 export default function DashboardPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setInvoices(getInvoices());
+    getInvoices().then(data => { setInvoices(data); setLoading(false); });
   }, []);
 
   const totalIssued = invoices.reduce((s, i) => s + i.total, 0);
   const totalPaid = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + i.total, 0);
   const unpaid = invoices.filter(i => i.status === 'unpaid' || i.status === 'overdue');
   const totalUnpaid = unpaid.reduce((s, i) => s + i.total, 0);
-  const recent = [...invoices].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
+  const recent = invoices.slice(0, 5);
 
   return (
     <AppShell>
       <h1 className="text-lg font-semibold text-gray-900 mb-5">Valdymo pultas</h1>
 
       <div className="grid grid-cols-3 gap-4 mb-6">
-        <StatCard
-          label="Išrašytos sąskaitos"
-          value={formatCurrency(totalIssued)}
-          icon={<FileText size={20} className="text-blue-500" />}
-          color="blue"
-        />
-        <StatCard
-          label="Gauti mokėjimai"
-          value={formatCurrency(totalPaid)}
-          icon={<TrendingUp size={20} className="text-green-500" />}
-          color="green"
-        />
-        <StatCard
-          label="Neapmokėtos sąskaitos"
-          value={formatCurrency(totalUnpaid)}
-          icon={<Clock size={20} className="text-orange-500" />}
-          color="orange"
-          count={unpaid.length}
-        />
+        <StatCard label="Išrašytos sąskaitos" value={formatCurrency(totalIssued)}
+          icon={<FileText size={20} className="text-blue-500" />} bg="bg-blue-50" />
+        <StatCard label="Gauti mokėjimai" value={formatCurrency(totalPaid)}
+          icon={<TrendingUp size={20} className="text-green-500" />} bg="bg-green-50" />
+        <StatCard label="Neapmokėtos sąskaitos" value={formatCurrency(totalUnpaid)}
+          icon={<Clock size={20} className="text-orange-500" />} bg="bg-orange-50" count={unpaid.length} />
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
@@ -54,13 +42,17 @@ export default function DashboardPage() {
             Visos sąskaitos <ArrowUpRight size={14} />
           </Link>
         </div>
-        {recent.length === 0 ? (
+        {loading ? (
+          <div className="py-16 text-center">
+            <Loader2 size={28} className="text-blue-400 animate-spin mx-auto" />
+          </div>
+        ) : recent.length === 0 ? (
           <div className="py-16 text-center">
             <FileText size={40} className="text-gray-200 mx-auto mb-3" />
-            <p className="text-gray-400 text-sm">Dar nėra sąskaitų</p>
+            <p className="text-gray-400 text-sm mb-4">Dar nėra sąskaitų</p>
             <Link href="/invoices/create"
-              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm rounded-xl hover:bg-blue-700">
-              Sukurti pirmą sąskaitą
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm rounded-xl hover:bg-blue-700">
+              <Plus size={14} /> Sukurti pirmą sąskaitą
             </Link>
           </div>
         ) : (
@@ -100,20 +92,16 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({ label, value, icon, color, count }: {
-  label: string; value: string; icon: React.ReactNode; color: string; count?: number;
+function StatCard({ label, value, icon, bg, count }: {
+  label: string; value: string; icon: React.ReactNode; bg: string; count?: number;
 }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
       <div className="flex items-center gap-3 mb-3">
-        <div className={`w-9 h-9 rounded-xl flex items-center justify-center bg-${color}-50`}>
-          {icon}
-        </div>
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${bg}`}>{icon}</div>
         <span className="text-sm text-gray-500">{label}</span>
         {count !== undefined && count > 0 && (
-          <span className="ml-auto text-xs text-orange-600 font-medium bg-orange-50 px-2 py-0.5 rounded-full">
-            {count}
-          </span>
+          <span className="ml-auto text-xs text-orange-600 font-medium bg-orange-50 px-2 py-0.5 rounded-full">{count}</span>
         )}
       </div>
       <div className="text-2xl font-bold text-gray-900">{value}</div>

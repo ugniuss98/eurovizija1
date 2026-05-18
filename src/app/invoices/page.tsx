@@ -6,36 +6,39 @@ import AppShell from '@/components/AppShell';
 import { getInvoices, deleteInvoice, saveInvoice } from '@/lib/storage';
 import { Invoice } from '@/lib/types';
 import { formatCurrency, getInvoiceStatusLabel, getInvoiceTypeLabel } from '@/lib/utils';
-import { Plus, Search, Trash2, Edit, Eye, MoreHorizontal, ChevronDown, FileText } from 'lucide-react';
+import { Plus, Search, Trash2, Edit, Eye, MoreHorizontal, ChevronDown, FileText, Loader2 } from 'lucide-react';
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [openMenu, setOpenMenu] = useState<string | null>(null);
 
-  const load = () => setInvoices(getInvoices());
+  const load = () => {
+    setLoading(true);
+    getInvoices().then(data => { setInvoices(data); setLoading(false); });
+  };
   useEffect(() => { load(); }, []);
 
   const filtered = invoices.filter(inv => {
     const q = search.toLowerCase();
     const matchSearch = !q ||
       `${inv.series} ${inv.number}`.toLowerCase().includes(q) ||
-      inv.buyer?.name?.toLowerCase().includes(q);
+      (inv.buyer?.name ?? '').toLowerCase().includes(q);
     const matchStatus = filterStatus === 'all' || inv.status === filterStatus;
     return matchSearch && matchStatus;
-  }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  });
 
-  const handleDelete = (id: string) => {
-    if (confirm('Ar tikrai norite ištrinti šią sąskaitą?')) {
-      deleteInvoice(id);
-      load();
-    }
+  const handleDelete = async (id: string) => {
+    if (!confirm('Ar tikrai norite ištrinti šią sąskaitą?')) return;
+    await deleteInvoice(id);
+    load();
     setOpenMenu(null);
   };
 
-  const handleMarkPaid = (inv: Invoice) => {
-    saveInvoice({ ...inv, status: 'paid', updatedAt: new Date().toISOString() });
+  const handleMarkPaid = async (inv: Invoice) => {
+    await saveInvoice({ ...inv, status: 'paid', updatedAt: new Date().toISOString() });
     load();
     setOpenMenu(null);
   };
@@ -52,24 +55,16 @@ export default function InvoicesPage() {
         </Link>
       </div>
 
-      {/* Filters */}
       <div className="flex items-center gap-3 mb-4">
         <div className="relative flex-1 max-w-xs">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Ieškoti sąskaitos..."
-            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:border-blue-400"
-          />
+            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:border-blue-400 outline-none" />
         </div>
         <div className="relative">
-          <select
-            value={filterStatus}
-            onChange={e => setFilterStatus(e.target.value)}
-            className="pl-3 pr-8 py-2 text-sm border border-gray-200 rounded-xl bg-white appearance-none focus:border-blue-400"
-          >
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+            className="pl-3 pr-8 py-2 text-sm border border-gray-200 rounded-xl bg-white appearance-none focus:border-blue-400 outline-none">
             <option value="all">Visi statusai</option>
             <option value="draft">Juodraštis</option>
             <option value="unpaid">Neapmokėta</option>
@@ -81,7 +76,11 @@ export default function InvoicesPage() {
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="py-20 text-center">
+            <Loader2 size={28} className="text-blue-400 animate-spin mx-auto" />
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="py-20 text-center">
             <FileText size={48} className="text-gray-200 mx-auto mb-4" />
             <p className="text-gray-400 text-sm mb-4">
@@ -113,8 +112,7 @@ export default function InvoicesPage() {
                 {filtered.map(inv => (
                   <tr key={inv.id} className="border-t border-gray-50 hover:bg-gray-50/50">
                     <td className="px-5 py-3">
-                      <Link href={`/invoices/${inv.id}`}
-                        className="font-medium text-blue-600 hover:underline">
+                      <Link href={`/invoices/${inv.id}`} className="font-medium text-blue-600 hover:underline">
                         {inv.series} {inv.number}
                       </Link>
                     </td>
@@ -129,10 +127,8 @@ export default function InvoicesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 relative">
-                      <button
-                        onClick={() => setOpenMenu(openMenu === inv.id ? null : inv.id)}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100"
-                      >
+                      <button onClick={() => setOpenMenu(openMenu === inv.id ? null : inv.id)}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100">
                         <MoreHorizontal size={16} />
                       </button>
                       {openMenu === inv.id && (
